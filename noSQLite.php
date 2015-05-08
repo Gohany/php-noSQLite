@@ -254,6 +254,10 @@ class dat
         const T_INDEX_LENGTH = 'L';
         const T_INDEX_COUNT = 'S';
         const T_ROW_COUNT = 'L';
+        const T_ARRAY_COUNT = 'S';
+        const T_ARRAY_NAME_LENGTH = 'S';
+        const T_NULL_STRING = 'a';
+        const T_ARRAY_VALUE_LENGTH = 'S';
 
         private $dataHandle;
         private $table;
@@ -397,7 +401,7 @@ class dat
         
         public function unpackHeader($bin)
         {
-                //$header = unpack('LheaderLength/LfieldLength/SfieldCount/LindexLength/SindexCount', $bin);
+                
                 $header = unpack(
                                 self::unpackString(
                                         'HEADER_LENGTH',
@@ -408,7 +412,7 @@ class dat
                                 ),
                                 $bin
                         );
-                //$lengthTilFields = 4 + 4 + 2 + 4 + 2;
+                
                 $lengthTilFields = 
                         self::sumSizes(
                                 self::T_HEADER_LENGTH, 
@@ -490,21 +494,50 @@ class dat
                 return $bin;
         }
         
+        public function unpackArray($array, $bin = '')
+        {
+                
+                if (empty($data))
+                {
+                        $data = array();
+                }
+                
+                foreach ($array as $name => $element)
+                {
+                        if (is_array($element))
+                        {
+                                $bin .= $this->packArray($element, $data[$name], $bin);
+                        }
+                        elseif (is_numeric($element))
+                        {
+                                if (isset($data[$name]) && !empty($data[$name]))
+                                {
+                                        // element is # of bytes
+                                        $bin .= pack('A' . $element, $this->binString($data[$name], $element));
+                                }
+                                else
+                                {
+                                        $bin .= pack('A' . $element, $this->binString('', $element));
+                                }
+                        }
+                }
+                return $bin;
+        }
+        
         public function packArraySchema($array, $fieldString = '')
         {
 
                 foreach ($array as $name => $data)
                 {
+                        $string = self::T_ARRAY_COUNT . self::T_ARRAY_NAME_LENGTH . self::T_NULL_STRING . strlen($name) . self::T_ARRAY_VALUE_LENGTH;
                         if (is_array($data))
                         {
                                 // 2 BYTES ARRAY COUNT , 2 BYTES name LENGTH = N, N BYTES name, 2 BYTES 00 00
-                                $string = 'SSa' . strlen($name). 'S';
                                 $fieldString .= pack($string, count($data), strlen($name), $name, 0);
                                 $fieldString = $this->packArraySchema($data, $fieldString);
                         }
                         elseif (is_numeric($data))
                         {
-                                $string = 'SSa' . strlen($name). 'S';
                                 $fieldString .= pack($string, 0, strlen($name), $name, $data);
                         }
                 }
@@ -517,18 +550,27 @@ class dat
                 for ($i=0;$fieldCount>$i;$i++)
                 {
                         $soFar = 0;
-                        $meta = unpack('SfieldCount/SnameLength', substr($bin, $soFar, 4));
+                        $b_soFar = substr($bin, $soFar, 4);
+                        $meta = unpack(
+                                self::unpackString(
+                                        'ARRAY_COUNT',
+                                        'ARRAY_NAME_LENGTH'
+                                ),
+                                $b_soFar
+                        );
                         $soFar += 4;
-                        $data = unpack('a' . $meta['nameLength'] . 'name/Sbytes', substr($bin, $soFar, 2 + $meta['nameLength']));
-                        $soFar += 2 + $meta['nameLength'];
                         
-                        if ($meta['fieldCount'] > 0)
+                        $b_data = substr($bin, $soFar, 2 + $meta['ARRAY_NAME_LENGTH']);
+                        $data = unpack(self::T_NULL_STRING . $meta['ARRAY_NAME_LENGTH'] . 'NAME/' . self::T_ARRAY_VALUE_LENGTH . 'BYTES', $b_data);
+                        $soFar += 2 + $meta['ARRAY_NAME_LENGTH'];
+                        
+                        if ($meta['ARRAY_COUNT'] > 0)
                         {
-                                list($array[$data['name']], $bin) = $this->unpackArraySchema(substr($bin, $soFar), $meta['fieldCount'], false);
+                                list($array[$data['NAME']], $bin) = $this->unpackArraySchema(substr($bin, $soFar), $meta['ARRAY_COUNT'], false);
                         }
                         else
                         {
-                                $array[$data['name']] = $data['bytes'];
+                                $array[$data['NAME']] = $data['BYTES'];
                                 $bin = substr($bin, $soFar);
                         }
                 }
@@ -667,24 +709,6 @@ class dat
                 return false;
         }
 
-        public function read($rowNum)
-        {
-                $this->readLock();
-                $this->unpackTable();
-
-                $rowPosition = $this->lengthTilData + ($this->rowLength() * ($rowNum - 1));
-                fseek($this->dataHandle, $rowPosition);
-                $row = fread($this->dataHandle, $this->rowLength);
-
-                $readSoFar = 0;
-                foreach ($this->fields as $name => $bytes)
-                {
-                        $data[$name] = unpack('A' . $bytes . $name, substr($row, $readSoFar, $bytes))[$name];
-                        $readSoFar += $bytes;
-                }
-                return $data;
-        }
-
         public function delete($rowNum)
         {
                 $this->writeLock();
@@ -735,18 +759,54 @@ class dat
                 }
 
                 fseek($this->dataHandle, 0);
-                $b_headerSize = fread($this->dataHandle, 2);
-                $unpack = unpack('Sheadersize', $b_headerSize);
+                $b_headerLength = fread($this->dataHandle, self::sumSizes(self::T_HEADER_LENGTH));
+                $unpack = unpack(self::unpackString('HEADER_LENGTH'), $b_headerLength);
 
-                $b_header = fread($this->dataHandle, $unpack['headersize']);
-                $this->unpackHeader($b_headerSize . $b_header);
+                $b_header = fread($this->dataHandle, $unpack['HEADER_LENGTH']);
+                $this->unpackHeader($b_headerLength . $b_header);
+                
+                // do index stuff
                 
         }
         
         public function write($data, $expire = 0)
         {
                 $this->writeLock();
+                $this->unpackTable();
+                fseek($this->dataHandle, 0, SEEK_END);
                 
+                $b_string = $this->packArray($this->fields, $data);
+                $writeData = fwrite($this->dataHandle, $b_string, strlen($b_string));
+                
+                fseek($this->dataHandle, $this->rowCountPosition);
+                $writeRowCount = fwrite($this->dataHandle, pack(self::T_ROW_COUNT, ++$this->rowCount), 4);
+                
+                if ($writeData && $writeRowCount)
+                {
+                        index::write($this->table, $this->indexString($data), $this->rowCount);
+                        return $this->rowCount;
+                }
+                return false;
+        }
+        
+        public function read($rowNum)
+        {
+                $this->readLock();
+                $this->unpackTable();
+
+                $rowPosition = $this->lengthTilData + ($this->rowLength() * ($rowNum - 1));
+                fseek($this->dataHandle, $rowPosition);
+                $row = fread($this->dataHandle, $this->rowLength);
+                
+                
+                
+//                $readSoFar = 0;
+//                foreach ($this->fields as $name => $bytes)
+//                {
+//                        $data[$name] = unpack('A' . $bytes . $name, substr($row, $readSoFar, $bytes))[$name];
+//                        $readSoFar += $bytes;
+//                }
+                return $data;
         }
         
 //        public function write($data, $expire = 0)
@@ -893,10 +953,25 @@ if (count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 'c')
         $indexes = [
             'status' => 4,
         ];
-        var_dump($dat->calculateArrayLength($fields));
+        
+        $data = [
+                'status' => 'ALIVE',
+                'subMember' => [
+                    'name' => 'JINX, buy me a coke.',
+                    'pid' => 49024,
+                    'brothers' => [
+                        'next' => 'nextypoooo',
+                    ],
+                ],
+                'last' => 'man standing',
+            ];
+        
+        //$dat->create($fields, $indexes);
+        $dat->write($data);
+        //var_dump($dat->calculateArrayLength($fields));
         //$bin = $dat->packHeader($fields, $indexes);
         //$dat->unpackHeader($bin);
-        //var_dump($dat);
+        var_dump($dat);
         //$fieldString = $dat->packArray($fields);
         //$array = $dat->unpackArray($fieldString, 3);
         //var_dump($array);
