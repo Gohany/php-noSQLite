@@ -1,5 +1,7 @@
 <?php
-
+require_once 'format.php';
+require_once 'index.php';
+require_once 'meta.php';
 var_dump($_SERVER['argv']);
 
 class stdin
@@ -38,246 +40,39 @@ class stdin
 
 }
 
-class index
-{
-
-        const DAT_DIR = '/var/mregister/';
-        const FILE_EXT = '.idx';
-        const OPEN_MODE = 'c+';
-
-        public $table;
-        public $indexHandle;
-        private $index;
-        private $indexChanged = false;
-        static $instance;
-
-        public function __construct($table)
-        {
-                $this->table = $table;
-                $file = self::DAT_DIR . $table . self::FILE_EXT;
-                if (!$this->indexHandle = fopen($file, self::OPEN_MODE))
-                {
-                        throw new Exception('Could not open index file.');
-                }
-
-                if (filesize($file) > 0)
-                {
-                        $this->readIndexFromDisk();
-                }
-        }
-
-        public function __destruct()
-        {
-                if (is_resource($this->indexHandle))
-                {
-                        if (!empty($this->index) && $this->indexChanged == true)
-                        {
-                                $this->writeIndexToDisk();
-                        }
-                        fclose($this->indexHandle);
-                }
-        }
-
-        public static function init()
-        {
-                foreach (glob(self::DAT_DIR . '*' . self::FILE_EXT) as $filename)
-                {
-                        self::singleton(basename($filename, self::FILE_EXT));
-                }
-        }
-
-        public static function singleton($table)
-        {
-                self::$instance[$table] || self::$instance[$table] = new index($table);
-                return self::$instance[$table];
-        }
-
-        /* Index
-         * 4 BYTES of INDEX COUNT
-         * ENTRY = 
-         *      4 BYTES OF KEY (crc32)
-         *      2 BYTES OF COUNT OF ELEMENTS
-         *      ELEMENTS =
-         *      2 BYTES OF INDEX STRING SIZE
-         *      4 BYTES OF ROW NUMBER
-         *      N BYTES OF INDEX STRING
-         */
-
-        public function writeIndexToDisk()
-        {
-
-                fseek($this->indexHandle, 0);
-                $toWrite = pack('L', count($this->index));
-                $size = 4;
-
-                foreach ($this->index as $key => $array)
-                {
-                        // array = array('indexString' => num, 'indexString => num)
-                        $b_arrayString = '';
-                        $b_arrayLength = 0;
-                        foreach ($array as $indexString => $rowNum)
-                        {
-                                // arrayString segment = length of indexString, indexString, rowNum
-                                $b_arrayString .= pack('SLa' . strlen($indexString), strlen($indexString), $rowNum, $indexString);
-                                $b_arrayLength += 2 + 4 + strlen($indexString);
-                        }
-                        // key, count of sub array, arrayString
-                        $toWrite .= pack('LS', $key, count($array)) . $b_arrayString;
-                        $size += 4 + 2 + $b_arrayLength;
-                }
-
-                if (fwrite($this->indexHandle, $toWrite, $size) === false)
-                {
-                        ftruncate($this->indexHandle, 0);
-                        throw new Exception('Unable to write index');
-                }
-                //dat::printHexDump($toWrite);
-                return true;
-        }
-
-        public function readIndexFromDisk()
-        {
-
-                fseek($this->indexHandle, 0);
-                $b_header = fread($this->indexHandle, 4);
-                $header = unpack('Lrows', $b_header);
-
-                for ($c = $header['rows'], $i = 0; $c > $i; $i++)
-                {
-
-                        // get key and count of sub array
-                        $buffer = fread($this->indexHandle, 6);
-                        $row = unpack('Lkey/SarrayCount', $buffer);
-
-                        for ($c2 = $row['arrayCount'], $e = 0; $c2 > $e; $e++)
-                        {
-                                $b_rowHeader = fread($this->indexHandle, 6);
-                                $rowHeader = unpack('Slength/LrowNum', $b_rowHeader);
-                                $b_indexString = fread($this->indexHandle, $rowHeader['length']);
-                                $string = unpack('a' . $rowHeader['length'] . 'indexString', $b_indexString);
-
-                                $this->index[$row['key']][$string['indexString']] = $rowHeader['rowNum'];
-                        }
-                }
-        }
-
-        public function deleteFromIndex($indexString)
-        {
-                $key = (int) crc32($indexString);
-                if (isset($this->index[$key][$indexString]))
-                {
-                        unset($this->index[$key][$indexString]);
-                        return true;
-                }
-                return false;
-        }
-
-        public static function truncate($table)
-        {
-                return self::singleton($table)->remove();
-        }
-
-        public function remove()
-        {
-                unset($this->index);
-                ftruncate($this->indexHandle, 0);
-        }
-
-        public static function delete($table, $indexString)
-        {
-                return self::singleton($table)->deleteFromIndex($indexString);
-        }
-
-        public static function write($table, $indexString, $value)
-        {
-                return self::singleton($table)->writeToIndex($indexString, $value);
-        }
-
-        public static function search($table, $indexString)
-        {
-                return self::singleton($table)->readFromIndex($indexString);
-        }
-
-        public static function destruct($table)
-        {
-                self::singleton($table)->__destruct();
-        }
-
-        public static function lock($table)
-        {
-                return self::singleton($table)->writeLock();
-        }
-
-        public function writeLock()
-        {
-                if (!flock($this->indexHandle, LOCK_SH | LOCK_NB))
-                {
-                        return false;
-                }
-                return true;
-        }
-
-        public function readFromIndex($indexString)
-        {
-                $key = (int) crc32($indexString);
-                if (isset($this->index[$key][$indexString]))
-                {
-                        return $this->index[$key][$indexString];
-                }
-                return false;
-        }
-
-        public function writeToIndex($indexString, $value)
-        {
-                $key = (int) crc32($indexString);
-                $this->index[$key][$indexString] = $value;
-                $this->indexChanged = true;
-        }
-
-}
-
-class dat
+class noSQLite extends format
 {
 
         const DAT_DIR = '/var/mregister/';
         const DATA_FILE_EXT = '.dat';
         const OPEN_MODE = 'c+';
-        
-        public static $variableSizes = array(
-            'S' => 2,
-            'L' => 4,
-        );
-        
-        const T_HEADER_LENGTH = 'L';
-        const T_FIELD_LENGTH = 'L';
-        const T_FIELD_COUNT = 'S';
-        const T_INDEX_LENGTH = 'L';
-        const T_INDEX_COUNT = 'S';
-        const T_ROW_COUNT = 'L';
-        const T_ARRAY_COUNT = 'S';
-        const T_ARRAY_NAME_LENGTH = 'S';
-        const T_NULL_STRING = 'a';
-        const T_ARRAY_VALUE_LENGTH = 'S';
 
         private $dataHandle;
         private $table;
-        private $rowCount;
-        private $rowCountPosition;
-        private $rowLength = 0;
-        private $lengthTilData;
-        private $unpacked;
-        public $fields;
-        public $indexes;
-        public $count = 0;
+        private $meta;
+        private $location;
 
         public function __construct($table)
         {
                 $this->table = $table;
-                if (!$this->dataHandle = fopen(self::DAT_DIR . $table . self::DATA_FILE_EXT, self::OPEN_MODE))
+                $this->location = self::DAT_DIR . $table . self::DATA_FILE_EXT;
+                if (!$this->dataHandle = fopen($this->location, self::OPEN_MODE))
                 {
                         throw new Exception('Could not open dat file.');
                 }
-                index::init();
+                
+                if (filesize($this->location) > 0)
+                {
+                        index::init();
+                        fseek($this->dataHandle, 0);
+                        $b_headerLength = fread($this->dataHandle, self::sumSizes(self::T_HEADER_LENGTH));
+                        
+                        $unpack = unpack(self::unpackString('HEADER_LENGTH'), $b_headerLength);
+                        $b_header = fread($this->dataHandle, $unpack['HEADER_LENGTH']);
+                }
+                
+                $b_meta = $b_headerLength . $b_header;
+                $this->meta = new meta($b_meta);
         }
 
         public function __destruct()
@@ -287,182 +82,22 @@ class dat
                         fclose($this->dataHandle);
                 }
         }
-
-        /*
-         * TABLE HEADER:
-         *      4 BYTES HEADER LENGTH
-         *      4 BYTES FIELD LENGTH
-         *      2 BYTES FIELD COUNT
-         *      4 BYTES INDEX LENGTH
-         *      2 BYTES INDEX COUNT
-         *              FIELD:
-         *              2 BYTES SUB FIELD COUNT (0 for key => bytes, 1+ for key => array)
-         *              2 BYTES name LENGTH = N
-         *              N BYTES name
-         *              2 BYTES field length (00 00 for array)
-         *                      SUBFIELD:
-         *                      2 BYTES SUB FIELD COUNT
-         *                      2 BYTES name LENGTH = N
-         *                      N BYTES name
-         *                      2 BYTES field length (00 00 for array)
-         *              FIELD:
-         *              2 BYTES SUB FIELD COUNT
-         *              2 BYTES name LENGTH = N
-         *              N BYTES name
-         *              2 BYTES field length
-         *                      SUBFIELD:
-         *                      2 BYTES SUB FIELD COUNT
-         *                      2 BYTES name LENGTH
-         *                      N BYTES name
-         *                      2 BYTES field length
-         *              INDEX:
-         *              2 BYTES name LENGTH
-         *              N BYTES name
-         *              2 BYTES index LENGTH
-         * 4 BYTES ROW COUNT
-         */
         
-        public static function sumSizes()
+        public function create($fields, $indexes)
         {
                 
-                if (func_num_args() == 0)
-                {
-                        return 0;
-                }
+                $b_header = $this->meta->packHeader($fields, $indexes);
+                $this->meta->unpackHeader($b_header);
                 
-                $sum = 0;
-                foreach (func_get_args() as $arg)
-                {
-                        if (isset(self::$variableSizes[$arg]))
-                        {
-                                $sum += self::$variableSizes[$arg];
-                        }
-                        elseif (is_numeric($arg))
-                        {
-                                $sum += $arg;
-                        }
-                }
-                return $sum;
+                $this->writeLock();
+                ftruncate($this->dataHandle, 0);
+                index::truncate($this->table);
+                
+                fseek($this->dataHandle, 0);
+                fwrite($this->dataHandle, $b_header, strlen($b_header));
                 
         }
         
-        public function packHeader($fields, $indexes)
-        {
-                
-                $b_fields = $this->packArraySchema($fields);
-                $b_indexes = $this->packArraySchema($indexes);
-                
-                // pack header
-                $fieldLength = strlen($b_fields);
-                $indexLength = strlen($b_indexes);
-                $fieldCount = count($fields);
-                $indexCount = count($indexes);
-                
-                //$headerLength = 4 + 4 + 2 + 4 + 2 + $fieldLength + $indexLength + 4;
-                $headerLength = 
-                        self::sumSizes(
-                                self::T_HEADER_LENGTH, 
-                                self::T_FIELD_LENGTH, 
-                                self::T_FIELD_COUNT, 
-                                self::T_INDEX_LENGTH, 
-                                self::T_INDEX_COUNT, 
-                                $fieldLength, 
-                                $indexLength, 
-                                self::T_ROW_COUNT
-                        );
-                
-                $b_rowCount = pack(self::T_ROW_COUNT, 0);
-                $packString = self::T_HEADER_LENGTH . self::T_FIELD_LENGTH . self::T_FIELD_COUNT . self::T_INDEX_LENGTH . self::T_INDEX_COUNT;
-                $b_header = pack($packString, $headerLength, $fieldLength, $fieldCount, $indexLength, $indexCount) . $b_fields . $b_indexes . $b_rowCount;
-                
-                return $b_header;
-                
-        }
-        
-        public static function unpackString()
-        {
-                if (func_num_args() == 0)
-                {
-                        return false;
-                }
-                
-                $string = '';
-                foreach (func_get_args() as $arg)
-                {
-                        if (defined('self::T_' . strtoupper($arg)))
-                        {
-                                $string .= constant('self::T_' . strtoupper($arg)) . $arg . '/';
-                        }
-                }
-                
-                return rtrim($string, '/');
-                
-        }
-        
-        public function unpackHeader($bin)
-        {
-                
-                $header = unpack(
-                                self::unpackString(
-                                        'HEADER_LENGTH',
-                                        'FIELD_LENGTH',
-                                        'FIELD_COUNT',
-                                        'INDEX_LENGTH',
-                                        'INDEX_COUNT'
-                                ),
-                                $bin
-                        );
-                
-                $lengthTilFields = 
-                        self::sumSizes(
-                                self::T_HEADER_LENGTH, 
-                                self::T_FIELD_LENGTH, 
-                                self::T_FIELD_COUNT, 
-                                self::T_INDEX_LENGTH, 
-                                self::T_INDEX_COUNT
-                        );
-                
-                $b_fields = substr($bin, $lengthTilFields, $header['FIELD_LENGTH']);
-                $b_indexes = substr($bin, $lengthTilFields + $header['FIELD_LENGTH'], $header['INDEX_LENGTH']);
-                
-                $this->fields = $this->unpackArraySchema($b_fields, $header['FIELD_COUNT']);
-                $this->indexes = $this->unpackArraySchema($b_indexes, $header['INDEX_COUNT']);
-                
-                $this->rowCountPosition = $lengthTilFields + $header['FIELD_LENGTH'] + $header['INDEX_LENGTH'];
-                $b_rowCount = substr($bin, $this->rowCountPosition, 4);
-                
-                $this->rowCount = unpack(self::unpackString('ROW_COUNT'), $b_rowCount)['ROW_COUNT'];
-                $this->lengthTilData = $this->rowCountPosition + 4;
-                
-                return true;
-        }
-        
-        public function rowLength()
-        {
-                if ($this->rowLength > 0)
-                {
-                        return $this->rowLength;
-                }
-                $this->rowLength = $this->calculateArrayLength($this->fields);
-                return $this->rowLength;
-        }
-        
-        public function calculateArrayLength($array)
-        {
-                $length = 0;
-                foreach ($array as $name => $data)
-                {
-                        if (is_array($data))
-                        {
-                                $length += $this->calculateArrayLength($data);
-                        }
-                        elseif (is_numeric($data))
-                        {
-                                $length += $data;
-                        }
-                }
-                return $length;
-        }
         
         public function packArray($array, $data, $bin = '')
         {
@@ -476,7 +111,11 @@ class dat
                 {
                         if (is_array($element))
                         {
-                                $bin .= $this->packArray($element, $data[$name], $bin);
+                                if (!isset($data[$name]) || !is_array($data[$name]))
+                                {
+                                        $data[$name] = array();
+                                }
+                                $bin .= $this->packArray($element, $data[$name]);
                         }
                         elseif (is_numeric($element))
                         {
@@ -491,220 +130,41 @@ class dat
                                 }
                         }
                 }
+                
                 return $bin;
         }
         
-        public function unpackArray($array, $bin = '')
+        public function unpackArray($array, $bin, &$soFar = 0)
         {
-                
-                if (empty($data))
-                {
-                        $data = array();
-                }
-                
+                $return = array();
                 foreach ($array as $name => $element)
                 {
                         if (is_array($element))
                         {
-                                $bin .= $this->packArray($element, $data[$name], $bin);
+                                $return[$name] = $this->unpackArray($element, $bin, $soFar);
                         }
                         elseif (is_numeric($element))
                         {
-                                if (isset($data[$name]) && !empty($data[$name]))
-                                {
-                                        // element is # of bytes
-                                        $bin .= pack('A' . $element, $this->binString($data[$name], $element));
-                                }
-                                else
-                                {
-                                        $bin .= pack('A' . $element, $this->binString('', $element));
-                                }
+                                $return[$name] = unpack('A' . $element . 'array', substr($bin, $soFar, $element))['array'];
+                                $soFar += $element;
                         }
                 }
-                return $bin;
+                return $return;
         }
-        
-        public function packArraySchema($array, $fieldString = '')
-        {
-
-                foreach ($array as $name => $data)
-                {
-                        $string = self::T_ARRAY_COUNT . self::T_ARRAY_NAME_LENGTH . self::T_NULL_STRING . strlen($name) . self::T_ARRAY_VALUE_LENGTH;
-                        if (is_array($data))
-                        {
-                                // 2 BYTES ARRAY COUNT , 2 BYTES name LENGTH = N, N BYTES name, 2 BYTES 00 00
-                                $fieldString .= pack($string, count($data), strlen($name), $name, 0);
-                                $fieldString = $this->packArraySchema($data, $fieldString);
-                        }
-                        elseif (is_numeric($data))
-                        {
-                                $fieldString .= pack($string, 0, strlen($name), $name, $data);
-                        }
-                }
-                
-                return $fieldString;
-        }
-        
-        public function unpackArraySchema($bin, $fieldCount)
-        {
-                for ($i=0;$fieldCount>$i;$i++)
-                {
-                        $soFar = 0;
-                        $b_soFar = substr($bin, $soFar, 4);
-                        $meta = unpack(
-                                self::unpackString(
-                                        'ARRAY_COUNT',
-                                        'ARRAY_NAME_LENGTH'
-                                ),
-                                $b_soFar
-                        );
-                        $soFar += 4;
-                        
-                        $b_data = substr($bin, $soFar, 2 + $meta['ARRAY_NAME_LENGTH']);
-                        $data = unpack(self::T_NULL_STRING . $meta['ARRAY_NAME_LENGTH'] . 'NAME/' . self::T_ARRAY_VALUE_LENGTH . 'BYTES', $b_data);
-                        $soFar += 2 + $meta['ARRAY_NAME_LENGTH'];
-                        
-                        if ($meta['ARRAY_COUNT'] > 0)
-                        {
-                                list($array[$data['NAME']], $bin) = $this->unpackArraySchema(substr($bin, $soFar), $meta['ARRAY_COUNT'], false);
-                        }
-                        else
-                        {
-                                $array[$data['NAME']] = $data['BYTES'];
-                                $bin = substr($bin, $soFar);
-                        }
-                }
-                if ($bin)
-                {
-                        return array($array, $bin);
-                }
-                return $array;
-        }
-        
-        public function create($fields, $indexes)
-        {
-                
-                $b_header = $this->packHeader($fields, $indexes);
-                $this->unpackHeader($b_header);
-                
-                $this->writeLock();
-                ftruncate($this->dataHandle, 0);
-                index::truncate($this->table);
-                fwrite($this->dataHandle, $b_header, strlen($b_header));
-                
-        }
-
-//        public function create($fields, $indexes)
-//        {
-//
-//                $fields = count($fields);
-//                $index = count($indexes);
-//                $fieldLengthString = pack('L*', $fields, $index);
-//                $fieldString = '';
-//                $indexString = '';
-//
-//                foreach ($fields as $name => $bytes)
-//                {
-//                        $string = "Sa" . strlen($name) . "S";
-//                        $fieldString .= pack($string, strlen($name), $name, $bytes);
-//                }
-//
-//                foreach ($indexes as $name => $bytes)
-//                {
-//                        $string = "Sa" . strlen($name) . "S";
-//                        $indexString .= pack($string, strlen($name), $name, $bytes);
-//                }
-//
-//                $masterString = $fieldLengthString . $fieldString . $indexString;
-//                $masterLength = strlen($masterString);
-//                $masterString = pack('S', $masterLength) . $masterString . pack('L', 0);
-//
-//                $this->writeLock();
-//                ftruncate($this->dataHandle, 0);
-//                index::truncate($this->table);
-//                fwrite($this->dataHandle, $masterString, strlen($masterString));
-//                $this->printHexDump($masterString);
-//                return true;
-//        }
-
-//        public function unpackTable()
-//        {
-//
-//                if ($this->unpacked)
-//                {
-//                        return true;
-//                }
-//
-//                fseek($this->dataHandle, 0);
-//                $b_headerSize = fread($this->dataHandle, 2);
-//                $unpack = unpack('Sheadersize', $b_headerSize);
-//
-//                $masterString = fread($this->dataHandle, $unpack['headersize']);
-//
-//                $getLengths = unpack('Lfields/Lindexes', $masterString);
-//                $masterString = substr($masterString, 8);
-//
-//                for ($i = 0, $c = $getLengths['fields']; $i < $c; $i++)
-//                {
-//                        $charLength = unpack('S', $masterString);
-//                        $unpackString = "Slength/a" . $charLength[1] . "name/Sbytes";
-//                        $fields[] = unpack($unpackString, $masterString);
-//                        $masterString = substr($masterString, 2 + $charLength[1] + 2);
-//                }
-//
-//                $this->rowLength = 0;
-//                foreach ($fields as $array)
-//                {
-//                        $this->fields[$array['name']] = $array['bytes'];
-//                        $this->rowLength += $array['bytes'];
-//                }
-//
-//                for ($i = 0, $c = $getLengths['indexes']; $i < $c; $i++)
-//                {
-//                        $charLength = unpack('S', $masterString);
-//                        $unpackString = "Slength/a" . $charLength[1] . "name/Sbytes";
-//                        $indexes[] = unpack($unpackString, $masterString);
-//                        $masterString = substr($masterString, 2 + $charLength[1] + 2);
-//                }
-//
-//                foreach ($indexes as $array)
-//                {
-//                        $this->indexes[$array['name']] = $array['bytes'];
-//                }
-//
-//                $this->rowCountPosition = ftell($this->dataHandle);
-//                $this->lengthTilData = $this->rowCountPosition + 4;
-//                $b_rowCountOffset = fread($this->dataHandle, 4);
-//                $a_rowCountOffset = unpack("Lposition", $b_rowCountOffset);
-//                $this->rowCount = $a_rowCountOffset['position'];
-//                $this->unpacked = true;
-//        }
 
         public function search($data, $return = false)
         {
-                $this->unpackTable();
-                $indexString = $this->indexString($data);
+                
+                $indexString = $this->indexString($data, $this->meta->indexes);
+                print "INDEX STRING: ".PHP_EOL;
+                var_dump($indexString);
                 if (strlen($indexString) <= 0)
                 {
                         return false;
                 }
-                //$time_start = microtime(true);
                 if ($rowNum = index::search($this->table, $indexString))
                 {
-                        //$time_end = microtime(true);
-                        //$time = $time_end - $time_start;
-                        //print "LOOKUP TOOK: " . $time . PHP_EOL;
-                        if ($return)
-                        {
-                                //$time_start = microtime(true);
-                                //$return = $this->read($rowNum);
-                                //$time_end = microtime(true);
-                                //$time = $time_end - $time_start;
-                                //print "LOOKUP TOOK: " . $time . PHP_EOL;
-                                //return $return;
-                                return $this->read($rowNum);
-                        }
-                        return $rowNum;
+                        return $return ? $this->read($rowNum) : $rowNum;
                 }
                 return false;
         }
@@ -712,14 +172,14 @@ class dat
         public function delete($rowNum)
         {
                 $this->writeLock();
-                $this->unpackTable();
+                
 
                 if ($data = $this->read($rowNum))
                 {
-                        $rowPosition = $this->lengthTilData + ($this->rowLength * ($rowNum - 1));
+                        $rowPosition = $this->meta->lengthTilData + ($this->meta->rowLength() * ($rowNum - 1));
                         fseek($this->dataHandle, $rowPosition);
-                        fwrite($this->dataHandle, pack('a' . $this->rowLength, ''), $this->rowLength);
-                        index::delete($this->table, $this->indexString($data));
+                        fwrite($this->dataHandle, pack('a' . $this->meta->rowLength(), ''), $this->meta->rowLength());
+                        index::delete($this->table, $this->indexString($data, $this->meta->indexes));
                 }
         }
 
@@ -732,113 +192,99 @@ class dat
                 return true;
         }
 
-        public function indexString($data)
+        public function indexString($data, $array)
         {
                 // preserve order
                 $indexString = '';
-                foreach ($this->indexes as $name => $bytes)
+                foreach ($array as $name => $element)
                 {
-                        if ((!isset($data[$name]) || !is_string(strval($data[$name]))) && isset($this->indexes[$name]))
+                        if (is_array($element) && is_array($data[$name]))
                         {
-                                $indexString .= '';
+                                $indexString .= $name . '[a]:' . $this->indexString($data[$name], $element);
                         }
-                        elseif (isset($this->indexes[$name]))
+                        elseif (!isset($data[$name]) || !is_string(strval($data[$name])))
                         {
-                                $indexString .= $data[$name];
+                                $indexString .= $name . ':';
+                        }
+                        elseif (isset($array[$name]))
+                        {
+                                $indexString .= $name . ':' . $data[$name];
                         }
                 }
+                
                 return $indexString;
-        }
-        
-        public function unpackTable()
-        {
-                
-                if ($this->unpacked)
-                {
-                        return true;
-                }
-
-                fseek($this->dataHandle, 0);
-                $b_headerLength = fread($this->dataHandle, self::sumSizes(self::T_HEADER_LENGTH));
-                $unpack = unpack(self::unpackString('HEADER_LENGTH'), $b_headerLength);
-
-                $b_header = fread($this->dataHandle, $unpack['HEADER_LENGTH']);
-                $this->unpackHeader($b_headerLength . $b_header);
-                
-                // do index stuff
-                
         }
         
         public function write($data, $expire = 0)
         {
-                $this->writeLock();
-                $this->unpackTable();
-                fseek($this->dataHandle, 0, SEEK_END);
                 
-                $b_string = $this->packArray($this->fields, $data);
+                $this->writeLock();
+                fseek($this->dataHandle, 0, SEEK_END);
+                if ($this->meta->static)
+                {
+                        return $this->writeStatic($data, $expire);
+                }
+                else
+                {
+                        return $this->writeDynamic($data, $expire);
+                }
+        }
+        
+        public function writeDynamic($data, $expire = 0)
+        {
+                print "ha HA!" . PHP_EOL;
+        }
+        
+        public function writeStatic($data, $expire = 0)
+        {
+                
+                $b_string = $this->packArray($this->meta->fields, $data);
                 $writeData = fwrite($this->dataHandle, $b_string, strlen($b_string));
                 
-                fseek($this->dataHandle, $this->rowCountPosition);
-                $writeRowCount = fwrite($this->dataHandle, pack(self::T_ROW_COUNT, ++$this->rowCount), 4);
+                fseek($this->dataHandle, $this->meta->rowCountPosition);
+                $writeRowCount = fwrite($this->dataHandle, pack(self::T_ROW_COUNT, ++$this->meta->rowCount), 4);
                 
                 if ($writeData && $writeRowCount)
                 {
-                        index::write($this->table, $this->indexString($data), $this->rowCount);
-                        return $this->rowCount;
+                        print "INDEX STRING: " . PHP_EOL;
+                        var_dump($this->indexString($data, $this->meta->indexes));
+                        
+                        index::write($this->table, $this->indexString($data, $this->meta->indexes), $this->meta->rowCount);
+                        return $this->meta->rowCount;
                 }
                 return false;
+        }
+        
+        public function readDynamic($rowNum)
+        {
+                print "HA!" . PHP_EOL;
         }
         
         public function read($rowNum)
         {
                 $this->readLock();
-                $this->unpackTable();
-
-                $rowPosition = $this->lengthTilData + ($this->rowLength() * ($rowNum - 1));
+                if ($this->meta->static)
+                {
+                        return $this->readStatic($rowNum);
+                }
+                else
+                {
+                        return $this->readDynamic($rowNum);
+                }
+        }
+        
+        public function readStatic($rowNum)
+        {
+                
+                $rowPosition = $this->meta->lengthTilData + ($this->meta->rowLength() * ($rowNum - 1));
                 fseek($this->dataHandle, $rowPosition);
-                $row = fread($this->dataHandle, $this->rowLength);
+                $row = fread($this->dataHandle, $this->meta->rowLength());
                 
+                $data = $this->unpackArray($this->meta->fields, $row);
                 
-                
-//                $readSoFar = 0;
-//                foreach ($this->fields as $name => $bytes)
-//                {
-//                        $data[$name] = unpack('A' . $bytes . $name, substr($row, $readSoFar, $bytes))[$name];
-//                        $readSoFar += $bytes;
-//                }
                 return $data;
         }
         
-//        public function write($data, $expire = 0)
-//        {
-//                $this->writeLock();
-//                $this->unpackTable();
-//                fseek($this->dataHandle, 0, SEEK_END);
-//
-//                $byteString = '';
-//                foreach ($this->fields as $name => $bytes)
-//                {
-//                        if (!isset($data[$name]) || !is_string(strval($data[$name])))
-//                        {
-//                                $byteString .= $this->binString('', $bytes);
-//                        }
-//                        else
-//                        {
-//                                $byteString .= $this->binString($data[$name], $bytes);
-//                        }
-//                }
-//
-//                $writeData = fwrite($this->dataHandle, $byteString, strlen($byteString));
-//                fseek($this->dataHandle, $this->rowCountPosition);
-//                $writeRowCount = fwrite($this->dataHandle, pack('L', ++$this->rowCount), 4);
-//                if ($writeData && $writeRowCount)
-//                {
-//                        index::write($this->table, $this->indexString($data), $this->rowCount);
-//                        return $this->rowCount;
-//                }
-//                return false;
-//        }
-
         public function binString($string, $length)
         {
                 return pack('A' . $length, str_pad(substr($string, 0, $length), $length, ' ', STR_PAD_RIGHT));
@@ -924,7 +370,7 @@ $fields = [
     ]
 ];
 
-$dat = new dat('mregister');
+$dat = new noSQLite('mregister');
 
 //while (true)
 //{
@@ -936,11 +382,21 @@ $dat = new dat('mregister');
 //        }
 //}
 
+$array = [
+    'hello' => 15,
+    'noyou' => [
+        'sup' => 'playah',
+    ]
+];
+
+$serialized = igbinary_serialize($array);
+noSQLite::printHexDump($serialized);
+var_dump(igbinary_unserialize($serialized));
 
 if (count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 'c')
 {
         $fields = [
-                'status' => 4,
+                'status' => 8,
                 'subMember' => [
                     'name' => 128,
                     'pid' => 8,
@@ -951,59 +407,77 @@ if (count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 'c')
                 'last' => 32,
             ];
         $indexes = [
-            'status' => 4,
+            'status' => 8,
+            'subMember' => [
+                'brothers' => [
+                    'next' => 12,
+                ]
+            ]
         ];
-        
+//        $indexes = [
+//                'status' => 8,
+//                'subMember' => [
+//                    'name' => 128,
+//                    'pid' => 8,
+//                    'brothers' => [
+//                        'next' => 12,
+//                    ],
+//                ],
+//                'last' => 32,
+//            ];
         $data = [
                 'status' => 'ALIVE',
                 'subMember' => [
                     'name' => 'JINX, buy me a coke.',
                     'pid' => 49024,
                     'brothers' => [
-                        'next' => 'nextypoooo',
+                        'next' => 'nextypoo',
                     ],
                 ],
                 'last' => 'man standing',
             ];
         
-        //$dat->create($fields, $indexes);
+        $dat->create($fields, $indexes);
         $dat->write($data);
-        //var_dump($dat->calculateArrayLength($fields));
-        //$bin = $dat->packHeader($fields, $indexes);
-        //$dat->unpackHeader($bin);
+        $data['status'] = 'DEAD';
+        $dat->write($data);
         var_dump($dat);
-        //$fieldString = $dat->packArray($fields);
-        //$array = $dat->unpackArray($fieldString, 3);
-        //var_dump($array);
-        //print "COUNT: ".$dat->count.PHP_EOL;
-//        $dat->create($tableStructure);
-//        $dat->unpackTable();
-//        var_dump($dat->fields);
-//        var_dump($dat->indexes);
-        
         
 }
 elseif (count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 'r')
 {
-        $dat->read(1);
-        $dat->read(2);
-        $dat->read(3);
+        $search = [
+            'status' => 'DEAD',
+            'subMember' => [
+                'brothers' => [
+                    'next' => 'nextypoo',
+                ]
+            ]
+        ];
+        $return = $dat->search($search, true);
+        var_dump($dat);
+        var_dump($return);
 }
 elseif (count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 'w')
 {
         $data = [
-            'name' => 'WOBERT',
-            'trysequence' => 'ps aux dat shit3',
-            'pid' => 1337,
-            'location' => '/dev/null',
-            'status' => 42,
-        ];
+                'status' => 'ALIVE',
+                'subMember' => [
+                    'name' => 'JINX, buy me a coke.',
+                    'pid' => 49024,
+                    'brothers' => [
+                        'next' => 'nextypoo',
+                    ],
+                ],
+                'last' => 'man standing',
+            ];
         $time_start = microtime(true);
-        for ($c = 1000000, $i = 0; $i < $c; $i++)
+        for ($c = 1000, $i = 0; $i < $c; $i++)
         {
-                $data['name'] = 'WOBERT' . $i;
+                $data['subMember']['brothers']['next'] = 'nextypoo' . $i;
                 $rowNum = $dat->write($data);
         }
+        // 6k per second @ 100k records
         $time_end = microtime(true);
         $time = $time_end - $time_start;
         print "WRITING TOOK: " . $time . PHP_EOL;
@@ -1011,7 +485,7 @@ elseif (count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 'w')
 elseif (count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 'l')
 {
         $search = [
-            'name' => $_SERVER['argv'][2]
+            'status' => $_SERVER['argv'][2]
         ];
         $time_start = microtime(true);
         var_dump($dat->search($search, true));
@@ -1022,18 +496,26 @@ elseif (count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 'l')
 elseif (count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 's')
 {
         $search = [
-            'name' => 'WOBERT',
+            'subMember' => [
+                'brothers' => [
+                    'next' => 'regular',
+                ]
+            ]
         ];
 
         $time_start = microtime(true);
-        for ($c = 1000000, $i = 0; $i < $c; $i++)
+        for ($c = 1000, $i = 0; $i < $c; $i++)
         {
-                $search['name'] = 'WOBERT' . $i;
+                $search['subMember']['brothers']['next'] = 'nextypoo' . $i;
                 //$search['name'] = $_SERVER['argv'][2];
                 //$results[] = $dat->search($search, true);
                 $dat->search($search, true);
                 //$results[$rowNum] = $dat->read($rowNum);
         }
+        // 3700 search and return per second @ 100k records
+        // 7500 searches per second @ 100k records
+        // 3850 search and return per second @ 10k records
+        // 8100 searches per second @ 10k records
         $time_end = microtime(true);
         $time = $time_end - $time_start;
         print "LOOKUP TOOK: " . $time . PHP_EOL;
