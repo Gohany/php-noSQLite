@@ -25,6 +25,7 @@ class format
         const T_INDEX_ROW_NUM = 'L';
         const T_INDEX_KEY = 'L';
         const T_INDEX_ELEMENTS = 'S';
+        const T_DATA_STRING = 'A';
         
         public static function sumSizes()
         {

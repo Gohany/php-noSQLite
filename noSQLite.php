@@ -156,8 +156,6 @@ class noSQLite extends format
         {
                 
                 $indexString = $this->indexString($data, $this->meta->indexes);
-                print "INDEX STRING: ".PHP_EOL;
-                var_dump($indexString);
                 if (strlen($indexString) <= 0)
                 {
                         return false;
@@ -246,9 +244,6 @@ class noSQLite extends format
                 
                 if ($writeData && $writeRowCount)
                 {
-                        print "INDEX STRING: " . PHP_EOL;
-                        var_dump($this->indexString($data, $this->meta->indexes));
-                        
                         index::write($this->table, $this->indexString($data, $this->meta->indexes), $this->meta->rowCount);
                         return $this->meta->rowCount;
                 }
@@ -287,7 +282,7 @@ class noSQLite extends format
         
         public function binString($string, $length)
         {
-                return pack('A' . $length, str_pad(substr($string, 0, $length), $length, ' ', STR_PAD_RIGHT));
+                return pack(self::T_DATA_STRING . $length, str_pad(substr($string, 0, $length), $length, ' ', STR_PAD_RIGHT));
         }
 
         public function writeLock()
@@ -372,26 +367,16 @@ $fields = [
 
 $dat = new noSQLite('mregister');
 
-//while (true)
-//{
-//        $input = file_get_contents('php://input');
-//        if (!empty($input))
-//        {
-//                var_dump($input);
-//                print PHP_EOL;
-//        }
-//}
-
-$array = [
-    'hello' => 15,
-    'noyou' => [
-        'sup' => 'playah',
-    ]
-];
-
-$serialized = igbinary_serialize($array);
-noSQLite::printHexDump($serialized);
-var_dump(igbinary_unserialize($serialized));
+//$array = [
+//    'hello' => 15,
+//    'noyou' => [
+//        'sup' => 'playah',
+//    ]
+//];
+//
+//$serialized = igbinary_serialize($array);
+//noSQLite::printHexDump($serialized);
+//var_dump(igbinary_unserialize($serialized));
 
 if (count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 'c')
 {
@@ -454,9 +439,13 @@ elseif (count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 'r')
                 ]
             ]
         ];
+        $time_start = microtime(true);
         $return = $dat->search($search, true);
-        var_dump($dat);
+        $time_end = microtime(true);
+        $time = $time_end - $time_start;
+        //var_dump($dat);
         var_dump($return);
+        print "LOOKUP TOOK: " . $time . PHP_EOL;
 }
 elseif (count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 'w')
 {
@@ -496,9 +485,10 @@ elseif (count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 'l')
 elseif (count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 's')
 {
         $search = [
+            'status' => 'ALIVE',
             'subMember' => [
                 'brothers' => [
-                    'next' => 'regular',
+                    'next' => 'nextypoo',
                 ]
             ]
         ];
