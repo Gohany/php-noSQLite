@@ -2,43 +2,16 @@
 require_once 'format.php';
 require_once 'index.php';
 require_once 'meta.php';
-var_dump($_SERVER['argv']);
+require_once 'stdin.php';
+//require_once 'daemon.php';
+//var_dump($_SERVER['argv']);
 
-class stdin
-{
-        
-        public static $inputs = [
-            '-n' => 'name',
-            '-t' => 'trySequence',
-            '-p' => 'pid',
-            '-l' => 'location',
-            '-s' => 'status',
-        ];
-        
-        function __construct()
-        {
-                $current = '';
-                for ($c = count($_SERVER['argv']) - 1, $i = 1; $c >= $i; $i++)
-                {
-                        if (!empty(self::$inputs[$_SERVER['argv'][$i]]))
-                        {
-                                $current = self::$inputs[$_SERVER['argv'][$i]];
-                        }
-                        elseif (!empty($current))
-                        {
-                                if (empty($this->{$current}))
-                                {
-                                        $this->{$current} = trim($_SERVER['argv'][$i]);
-                                }
-                                else
-                                {
-                                        $this->{$current} .= ' ' . trim($_SERVER['argv'][$i]);
-                                }
-                        }
-                }
-        }
-
-}
+//$daemon = new daemon(new stdin);
+//$daemon->registerService('noSQLite', array('table' => 'string'));
+//$daemon->registerServiceMethod('noSQLite', 'create', 2);
+//$daemon->registerServiceMethod('noSQLite', 'search', 2);
+//$daemon->registerServiceMethod('noSQLite', 'read', 1);
+//$daemon->registerServiceMethod('noSQLite', 'write', 1);
 
 class noSQLite extends format
 {
@@ -365,7 +338,7 @@ $fields = [
     ]
 ];
 
-$dat = new noSQLite('mregister');
+//$dat = new noSQLite('mregister');
 
 //$array = [
 //    'hello' => 15,
