@@ -233,6 +233,7 @@ class noSQLite extends format
         public function writeStatic($data, $expire = 0)
         {
                 
+                fseek($this->dataHandle, 0, SEEK_END);
                 $b_string = $this->packArray($this->meta->fields, $data);
                 $writeData = fwrite($this->dataHandle, $b_string, strlen($b_string));
                 
