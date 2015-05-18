@@ -3,15 +3,39 @@ require_once 'format.php';
 require_once 'index.php';
 require_once 'meta.php';
 require_once 'stdin.php';
-//require_once 'daemon.php';
-//var_dump($_SERVER['argv']);
 
-//$daemon = new daemon(new stdin);
-//$daemon->registerService('noSQLite', array('table' => 'string'));
-//$daemon->registerServiceMethod('noSQLite', 'create', 2);
-//$daemon->registerServiceMethod('noSQLite', 'search', 2);
-//$daemon->registerServiceMethod('noSQLite', 'read', 1);
-//$daemon->registerServiceMethod('noSQLite', 'write', 1);
+class noSQLi
+{
+        
+        static $instance;
+        
+        public static function singleton($table)
+        {
+                self::$instance[$table] || self::$instance[$table] = new noSQLite($table);
+                return self::$instance[$table];
+        }
+        
+        public static function search($table, $data, $return = false)
+        {
+                return self::singleton($table)->search(unserialize($data), $return);
+        }
+        
+        public static function create($table, $fields, $indexes)
+        {
+                return self::singleton($table)->create(unserialize($fields), unserialize($indexes));
+        }
+        
+        public static function write($table, $data)
+        {
+                return self::singleton($table)->write(unserialize($data));
+        }
+        
+        public static function read($table, $rowNum)
+        {
+                return self::singleton($table)->read($rowNum);
+        }
+        
+}
 
 class noSQLite extends format
 {
@@ -338,7 +362,7 @@ $fields = [
     ]
 ];
 
-//$dat = new noSQLite('mregister');
+//
 
 //$array = [
 //    'hello' => 15,
@@ -394,7 +418,7 @@ if (count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 'c')
                 ],
                 'last' => 'man standing',
             ];
-        
+        $dat = new noSQLite('mregister');
         $dat->create($fields, $indexes);
         $dat->write($data);
         $data['status'] = 'DEAD';
@@ -404,6 +428,7 @@ if (count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 'c')
 }
 elseif (count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 'r')
 {
+        $dat = new noSQLite('mregister');
         $search = [
             'status' => 'DEAD',
             'subMember' => [
@@ -422,6 +447,7 @@ elseif (count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 'r')
 }
 elseif (count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 'w')
 {
+        $dat = new noSQLite('mregister');
         $data = [
                 'status' => 'ALIVE',
                 'subMember' => [
@@ -446,6 +472,7 @@ elseif (count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 'w')
 }
 elseif (count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 'l')
 {
+        $dat = new noSQLite('mregister');
         $search = [
             'status' => $_SERVER['argv'][2]
         ];
@@ -457,6 +484,7 @@ elseif (count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 'l')
 }
 elseif (count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 's')
 {
+        $dat = new noSQLite('mregister');
         $search = [
             'status' => 'ALIVE',
             'subMember' => [

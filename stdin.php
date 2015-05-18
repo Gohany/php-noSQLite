@@ -7,10 +7,8 @@ class stdin
             '-t' => 'trySequence',
             '-p' => 'pid',
             '-l' => 'location',
-            '-s' => 'status',
+            '-s' => 'service',
         ];
-        
-        public $service = 'noSQLite';
         
         public function __construct()
         {
