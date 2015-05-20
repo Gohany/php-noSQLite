@@ -2,6 +2,40 @@
 
 require_once 'noSQLite.php';
 
+class noSQL
+{
+        
+        static $instance;
+        public $clientConnection;
+        
+        public static function singleton()
+        {
+                self::$instance || self::$instance = new noSQL;
+                return self::$instance;
+        }
+        
+        public function __construct()
+        {
+                $this->clientConnection = new clientConnection;
+        }
+        
+        public static function search($table, $array)
+        {
+                return self::singleton()->clientConnection->call('search', $table, serialize($array), '1');
+        }
+        
+        public static function write($table, $data)
+        {
+                return self::singleton()->clientConnection->call('write', $table, $data);
+        }
+        
+        public static function create($table, $fields, $indexes)
+        {
+                return self::singleton()->clientConnection->call('create', $table, $fields, $indexes);
+        }
+        
+}
+
 class clientConnection
 {
 
@@ -88,41 +122,23 @@ class clientConnection
                         }
                 }
 
-                if (false !== ($bytes = socket_recv($this->socket, $buf, 4, MSG_WAITALL)))
+                if (false === ($bytes = socket_recv($this->socket, $buf, 4, MSG_WAITALL)))
                 {
-                        echo "Read $bytes bytes from socket_recv(). Closing socket..." . PHP_EOL;
-                        print $buf . PHP_EOL;
-                }
-                else
-                {
-                        echo "socket_recv() failed; reason: " . socket_strerror(socket_last_error($socket)) . "\n";
+                        print "Socket error: " . socket_strerror(socket_last_error($this->socket)) . PHP_EOL;
                 }
                 
-                if (false !== ($bytes = socket_recv($this->socket, $b_length, 4, MSG_WAITALL)))
+                if (false === ($bytes = socket_recv($this->socket, $b_length, 4, MSG_WAITALL)))
                 {
-                        echo "Read $bytes bytes from socket_recv(). Closing socket..." . PHP_EOL;
-                        print $b_length . PHP_EOL;
-                }
-                else
-                {
-                        echo "socket_recv() failed; reason: " . socket_strerror(socket_last_error($socket)) . "\n";
+                        print "Socket error: " . socket_strerror(socket_last_error($this->socket)) . PHP_EOL;
                 }
                 
-                noSQLite::printHexDump($b_length);
                 $unpack = unpack('Llength', $b_length);
-                var_dump($unpack);
                 
-                if (false !== ($bytes = socket_recv($this->socket, $response, $unpack['length'], MSG_WAITALL)))
+                if (false === ($bytes = socket_recv($this->socket, $response, $unpack['length'], MSG_WAITALL)))
                 {
-                        echo "Read $bytes bytes from socket_recv(). Closing socket..." . PHP_EOL;
-                        print $buf . PHP_EOL;
+                        print "Socket error: " . socket_strerror(socket_last_error($this->socket)) . PHP_EOL;
                 }
-                else
-                {
-                        echo "socket_recv() failed; reason: " . socket_strerror(socket_last_error($socket)) . "\n";
-                }
-                var_dump($response);
-                noSQLite::printHexDump($response);
+                
                 socket_shutdown($this->socket);
                 socket_close($this->socket);
                 return unserialize($response);
@@ -139,8 +155,10 @@ $search = [
     ]
 ];
 
-$sender = new clientConnection;
-var_dump($sender->call('search', 'mregister', serialize($search), '1'));
+//$sender = new clientConnection;
+//var_dump($sender->call('search', 'mregister', serialize($search), '1'));
+
+var_dump(noSQL::search('mregister', $search));
 
 //$request = str_pad('THIS IS A TEST, BOO', 48, 'X');
 //$arguments = 3;

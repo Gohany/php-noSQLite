@@ -7,7 +7,10 @@ $stdin = new stdin();
 $stdin->service = 'noSQLi';
 $daemon = new daemon($stdin);
 $daemon->setService($stdin->service);
-$daemon->run();
+while (true)
+{
+        $daemon->run();
+}
 
 class listener
 {
@@ -99,7 +102,6 @@ class listener
                         while (true)
                         {
                                 $input = $this->read($client, $length, PHP_BINARY_READ);
-                                noSQLite::printHexDump($input);
                                 if (empty($this->header))
                                 {
                                         $this->header = unpack('Sarguments', $input);
@@ -129,7 +131,6 @@ class listener
 
                         if (!method_exists($object, $this->method))
                         {
-                                var_dump($this);
                                 $output = self::SIGNAL_ERR . PHP_EOL;
                                 socket_write($client, $output);
                                 socket_close($client);
@@ -138,14 +139,8 @@ class listener
 
                         $output = self::SIGNAL_ACK . PHP_EOL;
                         socket_write($client, $output);
-
-                        var_dump($this);
-
                         $response = serialize(call_user_func_array(array($object, $this->method), $this->arguments));
-                        var_dump($response);
                         socket_write($client, pack('L', strlen($response)), self::RESPONSE_LENGTH);
-                        print "LENGTH: ".strlen($response).PHP_EOL;
-                        noSQLite::printHexDump($response);
                         socket_write($client, $response, strlen($response));
                         socket_shutdown($client);
                         socket_close($client);
