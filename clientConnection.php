@@ -59,7 +59,6 @@ class clientConnection
 
         public function write($socket, $string, $length = null)
         {
-                noSQLite::printHexDump($string);
                 if (empty($length))
                 {
                         $length = strlen($string);
@@ -71,13 +70,9 @@ class clientConnection
                         {
                                 break;
                         }
-                        // Check if the entire message has been sented
                         if ($sent < $length)
                         {
-                                // If not sent the entire message.
-                                // Get the part of the message that has not yet been sented as message
                                 $string = substr($string, $sent);
-                                // Get the length of the not sented part
                                 $length -= $sent;
                         }
                         else
@@ -155,43 +150,4 @@ $search = [
     ]
 ];
 
-//$sender = new clientConnection;
-//var_dump($sender->call('search', 'mregister', serialize($search), '1'));
-
 var_dump(noSQL::search('mregister', $search));
-
-//$request = str_pad('THIS IS A TEST, BOO', 48, 'X');
-//$arguments = 3;
-//
-//$header = pack('S', $arguments);
-//$argumentMeta = pack('LLLL', strlen('search'), strlen($request), strlen($request), strlen($request));
-//
-//noSQLite::printHexDump($header);
-//
-//socket_write($socket, $header, 2);
-//socket_write($socket, $argumentMeta, 16);
-//socket_write($socket, 'search', strlen('search'));
-//socket_write($socket, $request, strlen($request));
-//socket_write($socket, $request, strlen($request));
-//socket_write($socket, $request, strlen($request));
-//
-//if (false !== ($bytes = socket_recv($socket, $buf, 2048, MSG_WAITALL)))
-//{
-//        echo "Read $bytes bytes from socket_recv(). Closing socket..." . PHP_EOL;
-//        print $buf . PHP_EOL;
-//}
-//else
-//{
-//        echo "socket_recv() failed; reason: " . socket_strerror(socket_last_error($socket)) . "\n";
-//}
-//
-//if (false !== ($bytes = socket_recv($socket, $buf, 2048, MSG_WAITALL)))
-//{
-//        echo "Read $bytes bytes from socket_recv(). Closing socket..." . PHP_EOL;
-//        print $buf . PHP_EOL;
-//}
-//else
-//{
-//        echo "socket_recv() failed; reason: " . socket_strerror(socket_last_error($socket)) . "\n";
-//}
-//socket_close($socket);

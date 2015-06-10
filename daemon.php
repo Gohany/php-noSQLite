@@ -7,10 +7,8 @@ $stdin = new stdin();
 $stdin->service = 'noSQLi';
 $daemon = new daemon($stdin);
 $daemon->setService($stdin->service);
-while (true)
-{
-        $daemon->run();
-}
+$daemon->run();
+
 
 class listener
 {
@@ -120,15 +118,18 @@ class listener
                                 }
                                 else
                                 {
+                                        
                                         if (count($this->arguments) == $this->header['arguments'])
                                         {
                                                 break;
                                         }
+                                        
                                         $length = $this->meta['argument' . ++$argument];
                                         $this->arguments[] = $input;
+                                        
                                 }
                         }
-
+                        
                         if (!method_exists($object, $this->method))
                         {
                                 $output = self::SIGNAL_ERR . PHP_EOL;
@@ -141,11 +142,10 @@ class listener
                         socket_write($client, $output);
                         $response = serialize(call_user_func_array(array($object, $this->method), $this->arguments));
                         socket_write($client, pack('L', strlen($response)), self::RESPONSE_LENGTH);
-                        socket_write($client, $response, strlen($response));
-                        socket_shutdown($client);
-                        socket_close($client);
-                        break;
+                        socket_write($client, $response, strlen($response)); 
                 }
+                socket_shutdown($client);
+                socket_close($client);
                 return true;
         }
 
